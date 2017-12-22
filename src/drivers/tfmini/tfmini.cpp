@@ -44,7 +44,6 @@
 #include <px4_getopt.h>
 #include <px4_module.h>
 #include <uORB/topics/distance_sensor.h>
-
 #include <fcntl.h>
 #include <termios.h>
 
@@ -56,6 +55,9 @@
 
 #define TFMINI_DEVICE_PATCH "/dev/tfmini"
 
+
+namespace tfmini
+{
 
 extern "C" __EXPORT int tfmini_main(int argc, char *argv[]);
 
@@ -82,9 +84,11 @@ public:
 	void run() override;
 
 	/** @see ModuleBase */
-	// int print_status() override;
+	int print_status() override;
 
 	static void cycle_trampoline(void *arg);
+
+	// int start();
 
 	/**
 	 * run the main loop: if running as task, continuously iterate, otherwise execute only one single cycle
@@ -101,6 +105,8 @@ private:
 	int _uart_file_des = -1;
 };
 
+struct work_s TFMini::_work = {};
+
 TFMini::TFMini(const char *const device):
 	CDev("tfmini", TFMINI_DEVICE_PATCH)
 {
@@ -114,6 +120,12 @@ TFMini::~TFMini()
 
 	::close(_uart_file_des);
 }
+
+// int TFMini::start()
+// {
+// 	return work_queue(HPWORK, &_work, (worker_t)&TFMini::cycle_trampoline, this, 0);
+// }
+
 
 int TFMini::task_spawn(int argc, char *argv[])
 {
@@ -148,10 +160,12 @@ int TFMini::task_spawn(int argc, char *argv[])
 		}
 
 		_object = dev;
+		// int ret = dev->start();
 
 		/* schedule a cycle to start things */
 		int ret = work_queue(HPWORK, &_work, (worker_t)&TFMini::cycle_trampoline, dev, 0);
 
+		// int ret = 0;
 		if (ret < 0) {
 			return ret;
 		}
@@ -187,6 +201,13 @@ int TFMini::task_spawn(int argc, char *argv[])
 void TFMini::cycle()
 {
 	PX4_INFO("cycle()");
+
+	// if (!run_as_task){
+
+	// }else
+	// work_queue(HPWORK, &_work, (worker_t)&TFMini::cycle_trampoline, this, 0);
+	// }
+// }
 }
 
 void TFMini::cycle_trampoline(void *arg)
@@ -274,11 +295,11 @@ void TFMini::run()
 }
 
 /** @see ModuleBase */
-// int TFMini::print_status()
-// {
-// 	//TODO
-// 	return PX4_OK;
-// }
+int TFMini::print_status()
+{
+	//TODO
+	return PX4_OK;
+}
 
 int TFMini::init()
 {
@@ -311,3 +332,10 @@ int tfmini_main(int argc, char *argv[])
 
 	return 0;
 }
+
+
+
+
+
+
+} // namespace tfmini
