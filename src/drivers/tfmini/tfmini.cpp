@@ -61,12 +61,6 @@ TFMini::~TFMini()
 	::close(_uart_file_des);
 }
 
-// int TFMini::start()
-// {
-// 	return work_queue(HPWORK, &_work, (worker_t)&TFMini::cycle_trampoline, this, 0);
-// }
-
-
 int TFMini::task_spawn(int argc, char *argv[])
 {
 	// Parse thread-flag argument only
@@ -100,7 +94,6 @@ int TFMini::task_spawn(int argc, char *argv[])
 		}
 
 		_object = dev;
-		// int ret = dev->start();
 
 		/* schedule a cycle to start things */
 		int ret = work_queue(HPWORK, &_work, (worker_t)&TFMini::cycle_trampoline, dev, 0);
@@ -113,15 +106,12 @@ int TFMini::task_spawn(int argc, char *argv[])
 		_task_id = task_id_is_work_queue;
 
 	} else {
-
-		/* start the IO interface task */
-
 		_task_id = px4_task_spawn_cmd("tfmini",
 					      SCHED_DEFAULT,
 					      SCHED_PRIORITY_SLOW_DRIVER,  // TODO: Not sure about that...
-					      1310,
+					      1300,
 					      (px4_main_t)&run_trampoline,
-					      nullptr);
+					      argv);
 
 		if (_task_id < 0) {
 			_task_id = -1;
@@ -141,22 +131,23 @@ int TFMini::task_spawn(int argc, char *argv[])
 void TFMini::cycle()
 {
 	PX4_INFO("cycle()");
-
-	// if (!run_as_task){
-
-	// }else
-	// work_queue(HPWORK, &_work, (worker_t)&TFMini::cycle_trampoline, this, 0);
-	// }
-// }
 }
 
 void TFMini::cycle_trampoline(void *arg)
 {
-	TFMini *dev = reinterpret_cast<TFMini *>(arg);
-	dev->cycle();
+	TFMini *tfmini = reinterpret_cast<TFMini *>(arg);
+	tfmini->cycle();
+
+	// Schedule next execution
+	if (!tfmini->should_exit()) {
+		work_queue(HPWORK, &_work, (worker_t)&TFMini::cycle_trampoline, tfmini,
+			   USEC2TICK(1000000 / TFMINI_SENSOR_RATE));
+
+	} else {
+		exit_and_cleanup();
+	}
 }
 
-/** @see ModuleBase */
 TFMini *TFMini::instantiate(int argc, char *argv[])
 {
 	// Parse arguments
@@ -165,7 +156,14 @@ TFMini *TFMini::instantiate(int argc, char *argv[])
 	int myoptind = 1;
 	const char *myoptarg = nullptr;
 
-	if (argc < 2) {
+	PX4_INFO("argc: %i", argc);
+
+	for (int i = 0; i < argc; i++) {
+		PX4_INFO(argv[i]);
+	}
+
+	if (argc < 1) {
+		PX4_INFO("OH NOE, NOT ENOUGH ARGUMENTZ (%i)", argc);
 		print_usage("not enough arguments");
 		return nullptr;
 	}
@@ -200,13 +198,11 @@ TFMini *TFMini::instantiate(int argc, char *argv[])
 	return tfmini;
 }
 
-/** @see ModuleBase */
 int TFMini::custom_command(int argc, char *argv[])
 {
 	return print_usage("unknown command");
 }
 
-/** @see ModuleBase */
 int TFMini::print_usage(const char *reason)
 {
 	if (reason) {
@@ -225,7 +221,6 @@ This module is a driver for the Benawake TFMini micro lidar sensor.
 	return PX4_OK;
 }
 
-/** @see ModuleBase */
 void TFMini::run()
 {
 	// Main loop
@@ -234,7 +229,6 @@ void TFMini::run()
 	}
 }
 
-/** @see ModuleBase */
 int TFMini::print_status()
 {
 	//TODO
@@ -252,7 +246,7 @@ int TFMini::init()
 	}
 
 	// Set UART baudrate
-	int speed = BAUD_RATE;
+	int speed = TFMINI_BAUD_RATE;
 	int termios_state = -1;
 	struct termios uart_config;
 
@@ -265,17 +259,9 @@ int TFMini::init()
 	return PX4_OK;
 }
 
-
 int tfmini_main(int argc, char *argv[])
 {
-	// return TFMini::main(argc, argv);
-
-	return 0;
+	return TFMini::main(argc, argv);
 }
-
-
-
-
-
 
 } // namespace tfmini

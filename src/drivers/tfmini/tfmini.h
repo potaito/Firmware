@@ -49,13 +49,14 @@
 #include <fcntl.h>
 #include <termios.h>
 
-#	define BAUD_RATE 115200
 
 #if !defined(DEVICE_ARGUMENT_MAX_LENGTH)
 #	define DEVICE_ARGUMENT_MAX_LENGTH 32
 #endif
 
 #define TFMINI_DEVICE_PATCH "/dev/tfmini"
+#define TFMINI_SENSOR_RATE 100
+#define TFMINI_BAUD_RATE 115200
 
 
 namespace tfmini
