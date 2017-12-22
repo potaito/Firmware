@@ -42,13 +42,8 @@
 
 #include <drivers/device/device.h>
 #include <px4_workqueue.h>
-#include <px4_defines.h>
-#include <px4_getopt.h>
 #include <px4_module.h>
 #include <uORB/topics/distance_sensor.h>
-#include <fcntl.h>
-#include <termios.h>
-
 
 #if !defined(DEVICE_ARGUMENT_MAX_LENGTH)
 #	define DEVICE_ARGUMENT_MAX_LENGTH 32
@@ -56,7 +51,7 @@
 
 #define TFMINI_DEVICE_PATCH "/dev/tfmini"
 #define TFMINI_SENSOR_RATE 100
-#define TFMINI_BAUD_RATE 115200
+#define TFMINI_BAUD_RATE B115200
 
 
 namespace tfmini
@@ -84,14 +79,9 @@ public:
 	static int print_usage(const char *reason = nullptr);
 
 	/** @see ModuleBase */
-	void run() override;
-
-	/** @see ModuleBase */
 	int print_status() override;
 
 	static void cycle_trampoline(void *arg);
-
-	// int start();
 
 	/**
 	 * run the main loop: if running as task, continuously iterate, otherwise execute only one single cycle

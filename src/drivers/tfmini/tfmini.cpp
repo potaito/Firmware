@@ -40,6 +40,12 @@
 
 #include "tfmini.h"
 
+#include <px4_defines.h>
+#include <px4_getopt.h>
+#include <fcntl.h>
+#include <termios.h>
+#include <unistd.h>
+
 namespace tfmini
 {
 
@@ -63,67 +69,29 @@ TFMini::~TFMini()
 
 int TFMini::task_spawn(int argc, char *argv[])
 {
-	// Parse thread-flag argument only
-	bool run_as_thread = false;
-	int ch;
-	int myoptind = 1;
-	const char *myoptarg = nullptr;
+	TFMini *tfmini = TFMini::instantiate(argc, argv);
 
-	if (argc > 2) {
-		while ((ch = px4_getopt(argc, argv, "t:", &myoptind, &myoptarg)) != EOF) {
-			switch (ch) {
-			case 't':
-				run_as_thread = true;
-				break;
-			}
-		}
+	if (tfmini == nullptr) {
+		PX4_ERR("Failed to instantiate module");
+		return PX4_ERROR;
 	}
 
-	if (!run_as_thread) {
-		TFMini *dev = TFMini::instantiate(argc, argv);
-
-		if (dev == nullptr) {
-			PX4_ERR("Failed to instantiate module");
-			return PX4_ERROR;
-		}
-
-		if (dev->init() != 0) {
-			PX4_ERR("init failed");
-			delete dev;
-			return PX4_ERROR;
-		}
-
-		_object = dev;
-
-		/* schedule a cycle to start things */
-		int ret = work_queue(HPWORK, &_work, (worker_t)&TFMini::cycle_trampoline, dev, 0);
-
-		// int ret = 0;
-		if (ret < 0) {
-			return ret;
-		}
-
-		_task_id = task_id_is_work_queue;
-
-	} else {
-		_task_id = px4_task_spawn_cmd("tfmini",
-					      SCHED_DEFAULT,
-					      SCHED_PRIORITY_SLOW_DRIVER,  // TODO: Not sure about that...
-					      1300,
-					      (px4_main_t)&run_trampoline,
-					      argv);
-
-		if (_task_id < 0) {
-			_task_id = -1;
-			return -errno;
-		}
+	if (tfmini->init() != PX4_OK) {
+		PX4_ERR("init failed");
+		delete tfmini;
+		return PX4_ERROR;
 	}
 
-	// wait until task is up & running (the mode_* commands depend on it)
-	if (wait_until_running() < 0) {
-		_task_id = -1;
-		return -1;
+	_object = tfmini;
+
+	/* schedule first cycle as soon as possible */
+	int ret = work_queue(HPWORK, &_work, (worker_t)&TFMini::cycle_trampoline, tfmini, 0);
+
+	if (ret < 0) {
+		return ret;
 	}
+
+	_task_id = task_id_is_work_queue;
 
 	return PX4_OK;
 }
@@ -162,8 +130,7 @@ TFMini *TFMini::instantiate(int argc, char *argv[])
 		PX4_INFO(argv[i]);
 	}
 
-	if (argc < 1) {
-		PX4_INFO("OH NOE, NOT ENOUGH ARGUMENTZ (%i)", argc);
+	if (argc < 2) {
 		print_usage("not enough arguments");
 		return nullptr;
 	}
@@ -178,12 +145,12 @@ TFMini *TFMini::instantiate(int argc, char *argv[])
 			PX4_WARN("unrecognized flag");
 			break;
 		}
-
 	}
 
 	/* Sanity check on arguments */
 	if (device == nullptr || strlen(device) == 0) {
 		print_usage("no device specified");
+		return nullptr;
 	}
 
 	// Instantiate module
@@ -221,14 +188,6 @@ This module is a driver for the Benawake TFMini micro lidar sensor.
 	return PX4_OK;
 }
 
-void TFMini::run()
-{
-	// Main loop
-	while (!should_exit()) {
-		cycle();
-	}
-}
-
 int TFMini::print_status()
 {
 	//TODO
@@ -237,21 +196,45 @@ int TFMini::print_status()
 
 int TFMini::init()
 {
-	// Open UART port
-	// TODO: Set right options
+	int termios_state = -1;
+	struct termios config;
+
+	/* Make sure the struct does not have anything in it*/
+	memset(&config, 0, sizeof(struct termios));
+
+	// Open and configure UART port
 	_uart_file_des = ::open(_device_path, O_RDONLY | O_NOCTTY | O_NONBLOCK);
 	if (_uart_file_des < 0) {
 		PX4_ERR("failed to open uart device!");
 		return PX4_ERROR;
 	}
 
-	// Set UART baudrate
-	int speed = TFMINI_BAUD_RATE;
-	int termios_state = -1;
-	struct termios uart_config;
+	/* Get the current configurations of the termios device. */
+	if (tcgetattr(_uart_file_des, &config) != 0)
+	{
+		PX4_ERR("tcgetattr call failed.");
+		return PX4_ERROR;
+	}
 
-	// TODO: Lookup online if this is the proper way!
-	if (cfsetispeed(&uart_config, speed) < 0 || cfsetospeed(&uart_config, speed) < 0) {
+	// Input flags - Turn off input processing
+	//
+	// convert break to null byte, no CR to NL translation,
+	// no NL to CR translation, don't mark parity errors or breaks
+	// no input parity check, don't strip high bit off,
+	// no XON/XOFF software flow control
+	config.c_iflag &= ~(IGNBRK | BRKINT | ICRNL |
+										INLCR | PARMRK | INPCK | ISTRIP | IXON);
+
+	// // Apply the config changes
+	if(tcsetattr(_uart_file_des, TCSANOW, &config) < 0)
+	{
+		PX4_ERR("failed to apply termios configuration for %s: %d\n", _device_path, termios_state);
+		return PX4_ERROR;
+	}
+
+	// Set baud rate
+	if(cfsetispeed(&config, B115200) < 0 ||
+	   cfsetospeed(&config, B115200) < 0) {
 		PX4_ERR("failed to set baudrate for %s: %d\n", _device_path, termios_state);
 		return PX4_ERROR;
 	}
