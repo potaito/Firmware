@@ -52,18 +52,26 @@ namespace tfmini
 extern "C" __EXPORT int tfmini_main(int argc, char *argv[]);
 
 struct work_s TFMini::_work = {};
+uint8_t TFMini::_next_instance_id = 0;
 
-TFMini::TFMini(const char *const device):
-	CDev("tfmini", TFMINI_DEVICE_PATCH)
+TFMini::TFMini(const char *const device, uint8_t orientation):
+	CDev("tfmini", TFMINI_DEVICE_PATCH),
+	_distance_sensor_topic(nullptr),
+	_orb_class_instance(-1)
 {
 	strncpy(_device_path, device, sizeof(_device_path));
 	_device_path[sizeof(_device_path) - 1] = '\0';  // Fix in case of overflow
+
+	// Add static data to sensor message
+	sensor_msg.min_distance = TFMINI_MIN_DISTANCE;
+	sensor_msg.max_distance = TFMINI_MAX_DISTANCE;
+	sensor_msg.type = distance_sensor_s::MAV_DISTANCE_SENSOR_LASER;
+	sensor_msg.orientation = orientation;
+	sensor_msg.id = TFMini::_next_instance_id++;
 }
 
 TFMini::~TFMini()
 {
-	// TODO: uorb unadvertise
-
 	::close(_uart_file_des);
 }
 
@@ -98,7 +106,14 @@ int TFMini::task_spawn(int argc, char *argv[])
 
 void TFMini::cycle()
 {
-	PX4_INFO("cycle()");
+	sensor_msg.timestamp = hrt_absolute_time();
+	sensor_msg.current_distance = 0;
+	sensor_msg.covariance = 0.0f;
+
+	/* publish sensor data, if we are the primary */
+	if (_distance_sensor_topic != nullptr) {
+		orb_publish(ORB_ID(distance_sensor), _distance_sensor_topic, &sensor_msg);
+	}
 }
 
 void TFMini::cycle_trampoline(void *arg)
@@ -154,7 +169,8 @@ TFMini *TFMini::instantiate(int argc, char *argv[])
 	}
 
 	// Instantiate module
-	TFMini *tfmini = new TFMini(device);
+	// TODO: Parse orientation argument
+	TFMini *tfmini = new TFMini(device, distance_sensor_s::ROTATION_DOWNWARD_FACING);
 
 	if (tfmini->init() != 0) {
 		PX4_ERR("failed to initialize module");
@@ -196,6 +212,7 @@ int TFMini::print_status()
 
 int TFMini::init()
 {
+	PX4_INFO("Configuring UART");
 	int termios_state = -1;
 	struct termios config;
 
@@ -237,6 +254,14 @@ int TFMini::init()
 	   cfsetospeed(&config, B115200) < 0) {
 		PX4_ERR("failed to set baudrate for %s: %d\n", _device_path, termios_state);
 		return PX4_ERROR;
+	}
+
+	// Advertise uORB
+	_distance_sensor_topic = orb_advertise_multi(ORB_ID(distance_sensor),
+	&sensor_msg, &_orb_class_instance, ORB_PRIO_LOW);
+
+	if (_distance_sensor_topic == nullptr) {
+		PX4_WARN("failed to create distance_sensor object. Is uOrb running?");
 	}
 
 	return PX4_OK;

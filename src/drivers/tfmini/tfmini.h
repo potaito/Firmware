@@ -40,9 +40,12 @@
 
 #pragma once
 
+#include <drivers/device/ringbuffer.h>
 #include <drivers/device/device.h>
 #include <px4_workqueue.h>
 #include <px4_module.h>
+#include <uORB/uORB.h>
+#include <uORB/topics/subsystem_info.h>
 #include <uORB/topics/distance_sensor.h>
 
 #if !defined(DEVICE_ARGUMENT_MAX_LENGTH)
@@ -50,9 +53,11 @@
 #endif
 
 #define TFMINI_DEVICE_PATCH "/dev/tfmini"
-#define TFMINI_SENSOR_RATE 100
 #define TFMINI_BAUD_RATE B115200
 
+#define TFMINI_SENSOR_RATE 100
+#define TFMINI_MIN_DISTANCE (0.30f)
+#define TFMINI_MAX_DISTANCE (12.00f)
 
 namespace tfmini
 {
@@ -63,7 +68,7 @@ extern "C" __EXPORT int tfmini_main(int argc, char *argv[]);
 class TFMini : public device::CDev, public ModuleBase<TFMini>
 {
 public:
-	TFMini(const char *const device);
+	TFMini(const char *const device, uint8_t orientation);
 	~TFMini();
 
 	/** @see ModuleBase */
@@ -89,16 +94,18 @@ public:
 	void cycle();
 
 private:
-	/** Prevent copies */
-	TFMini(const TFMini &other);
+	/** Prevent copies of class */
+	TFMini(const TFMini &);
+	TFMini operator=(const TFMini &);
+
 	int init();
 	char _device_path[DEVICE_ARGUMENT_MAX_LENGTH];
-
+	orb_advert_t		_distance_sensor_topic {};
+	int				_orb_class_instance;
+	struct distance_sensor_s sensor_msg;
 	static struct work_s	_work;
 	int _uart_file_des = -1;
+	static uint8_t _next_instance_id;
 };
-
-
-
 
 } // namespace tfmini
