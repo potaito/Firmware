@@ -38,72 +38,12 @@
  * Driver for the Benawake TFMini micro lidar range finder, connected via UART.
  */
 
-#include <drivers/device/device.h>
-#include <px4_workqueue.h>
-#include <px4_defines.h>
-#include <px4_getopt.h>
-#include <px4_module.h>
-#include <uORB/topics/distance_sensor.h>
-#include <fcntl.h>
-#include <termios.h>
-
-#	define BAUD_RATE 115200
-
-#if !defined(DEVICE_ARGUMENT_MAX_LENGTH)
-#	define DEVICE_ARGUMENT_MAX_LENGTH 32
-#endif
-
-#define TFMINI_DEVICE_PATCH "/dev/tfmini"
-
+#include "tfmini.h"
 
 namespace tfmini
 {
 
 extern "C" __EXPORT int tfmini_main(int argc, char *argv[]);
-
-
-class TFMini : public device::CDev, public ModuleBase<TFMini>
-{
-public:
-	TFMini(const char *const device);
-	~TFMini();
-
-	/** @see ModuleBase */
-	static int task_spawn(int argc, char *argv[]);
-
-	/** @see ModuleBase */
-	static TFMini *instantiate(int argc, char *argv[]);
-
-	/** @see ModuleBase */
-	static int custom_command(int argc, char *argv[]);
-
-	/** @see ModuleBase */
-	static int print_usage(const char *reason = nullptr);
-
-	/** @see ModuleBase */
-	void run() override;
-
-	/** @see ModuleBase */
-	int print_status() override;
-
-	static void cycle_trampoline(void *arg);
-
-	// int start();
-
-	/**
-	 * run the main loop: if running as task, continuously iterate, otherwise execute only one single cycle
-	 */
-	void cycle();
-
-private:
-	/** Prevent copies */
-	TFMini(const TFMini &other);
-	int init();
-	char _device_path[DEVICE_ARGUMENT_MAX_LENGTH];
-
-	static struct work_s	_work;
-	int _uart_file_des = -1;
-};
 
 struct work_s TFMini::_work = {};
 
