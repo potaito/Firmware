@@ -105,24 +105,46 @@ void TFMini::cycle()
 	memset(rx_buffer, 0, sizeof(rx_buffer));
 
 #if defined(__PX4_QURT)
-	/* For QURT, just use read for now, since this doesn't block, we need to
-	   slow it down just a bit. */
-	usleep(TFMINI_WAIT_BEFORE_READ_MICRO_SECS);
+	/* For QURT, just use read for now, since this doesn't block, the read is
+	   delayed by a bit longer than it would take to transmit a full message
+		 given the protocol's baud rate. */
+	// usleep(TFMINI_WAIT_BEFORE_READ_MICRO_SECS);
 	num_bytes_read = ::read(_uart_file_des, rx_buffer, sizeof(rx_buffer));
 	memcpy(_buffer, rx_buffer, num_bytes_read);
 
 #else
-	// // Wait for data to be received, using sensor rate as timeout in order to have
-	// // the task still appear responsive
-	// struct pollfd fds;
-	// fds.fd = _uart_file_des;
-	// fds.events = POLLIN;
-	// fds.revents = 0;
-	// int ret = poll(fds, 1, -1, 1000.0/TFMINI_SENSOR_RATE);
-	//
-	// if (ret > 0 && fds.revents & POLLIN) {
-	//
-	// }
+	// Wait for data to be received, using sensor rate as timeout in order to have
+	// the task still appear responsive
+	struct pollfd fds;
+	fds.fd = _uart_file_des;
+	fds.events = POLLIN;
+	fds.revents = 0;
+	int ret = poll(fds, 1, -1, 1000.0 / TFMINI_SENSOR_RATE);
+
+	if (ret > 0 && fds.revents & POLLIN) {
+		/*
+		 * We are here because poll says there is some data, so this
+		 * won't block even on a blocking device. But don't read immediately
+		 * by 1-2 bytes, wait for some more data to save expensive read() calls.
+		 * If we have all requested data available, read it without waiting.
+		 * If more bytes are available, we'll go back to poll() again.
+		 */
+#ifdef __PX4_NUTTX
+		int err = 0;
+		int bytesAvailable = 0;
+		err = ioctl(_serial_fd, FIONREAD, (unsigned long)&bytesAvailable);
+
+		if ((err != 0) || (bytesAvailable < TFMINI_FRAME_SIZE)) {
+			usleep(TFMINI_WAIT_BEFORE_READ_MICRO_SECS * 1000);
+		}
+
+#else
+		usleep(TFMINI_WAIT_BEFORE_READ_MICRO_SECS * 1000);
+#endif
+
+		ret = ::read(_uart_file_des, rx_buffer, BUFFER_SIZE);
+	}
+
 #endif
 
 
