@@ -52,8 +52,11 @@
 #	define DEVICE_ARGUMENT_MAX_LENGTH 32
 #endif
 
-#define TFMINI_FRAME_SIZE 9  // Frame size in bytes
+#define TFMINI_FRAME_SIZE 9       // Frame size in bytes
 #define TFMINI_FRAME_HEADER 0x59  // Has to appear twice in succession
+#define TFMINI_BYTE_POS_DIST_L 2      // Index of Distance low byte
+#define TFMINI_BYTE_POS_DIST_H 3      // Index of Distance high byte
+#define TFMINI_BYTE_POS_CRC 8         // Index of CRC byte
 
 #define TFMINI_DEVICE_PATCH "/dev/tfmini"
 #define TFMINI_BAUD_RATE B115200
@@ -94,7 +97,7 @@ public:
 	static void cycle_trampoline(void *arg);
 
 	/**
-	 * run the main loop: if running as task, continuously iterate, otherwise execute only one single cycle
+	 * run the main loop
 	 */
 	void cycle();
 

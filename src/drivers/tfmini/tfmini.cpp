@@ -224,7 +224,7 @@ This module is a driver for the Benawake TFMini micro lidar sensor.
 
 int TFMini::print_status()
 {
-	//TODO
+	PX4_INFO("running on device %s", _device_path);
 	return PX4_OK;
 }
 
@@ -296,8 +296,8 @@ int TFMiniProto::uart_config(int uart_fd){
 
 	// Set baud rate
 	PX4_INFO("Setting baud rate");
-	if(cfsetispeed(&config, B115200) < 0 ||
-	   cfsetospeed(&config, B115200) < 0) {
+	if(cfsetispeed(&config, TFMINI_BAUD_RATE) < 0 ||
+	   cfsetospeed(&config, TFMINI_BAUD_RATE) < 0) {
 		PX4_ERR("TFMiniProto: failed to set baudrate\n");
 		return PX4_ERROR;
 	}
@@ -324,16 +324,17 @@ bool TFMiniProto::parse(uint8_t *const buffer, size_t buff_len, distance_sensor_
 	// Checksum is the lower 8 bit of the sum of the frame's payload, without crc:
 	// byte1 + byte2 + byte3 + .. + byte8
 	uint16_t expected_checksum = 0;
-	for (size_t byte = 0; byte < 8; byte++){
+	for (size_t byte = 0; byte < TFMINI_BYTE_POS_CRC; byte++){
 		expected_checksum += buffer[byte];
 	}
-	if (buffer[8]!=expected_checksum%256){
+	if (buffer[TFMINI_BYTE_POS_CRC]!=expected_checksum%256){
 		PX4_WARN("crc not matching, dropping measurement");
 		return false; // CRC mismatch, drop message
 	}
 
 	msg->timestamp = hrt_absolute_time();
-	msg->current_distance = (buffer[header_index+2] + (buffer[header_index+3] << 8))/100.0;
+	msg->current_distance = (buffer[header_index+TFMINI_BYTE_POS_DIST_L] +
+													(buffer[header_index+TFMINI_BYTE_POS_DIST_H] << 8))/100.0;
 	msg->covariance = 0.0f;  // TODO: Can this be a static value from the data sheet?
 
 	return true;
