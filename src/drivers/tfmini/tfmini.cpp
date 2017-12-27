@@ -84,12 +84,6 @@ int TFMini::task_spawn(int argc, char *argv[])
 		return PX4_ERROR;
 	}
 
-	if (tfmini->init() != PX4_OK) {
-		PX4_ERR("init failed");
-		delete tfmini;
-		return PX4_ERROR;
-	}
-
 	_object = tfmini;
 
 	/* schedule first cycle as soon as possible */
