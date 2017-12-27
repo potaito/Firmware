@@ -54,17 +54,21 @@
 
 #define TFMINI_DEVICE_PATCH "/dev/tfmini"
 #define TFMINI_BAUD_RATE B115200
+#define TFMINI_WAIT_BEFORE_READ_MICRO_SECS  1000  // Given the baud rate and frame size, the theoretical transmission time per frame is 625 microseconds.
 
-#define TFMINI_SENSOR_RATE 100
-#define TFMINI_MIN_DISTANCE (0.30f)
-#define TFMINI_MAX_DISTANCE (12.00f)
+#define TFMINI_FRAME_SIZE 9  // Frame size in bytes
+#define TFMINI_FRAME_HEADER 0x5959
+
+#define TFMINI_SENSOR_RATE 100       // Sensor update rate in Hz
+#define TFMINI_MIN_DISTANCE (0.30f)  // Minimum sensor distance in meters
+#define TFMINI_MAX_DISTANCE (12.00f) // Maximum sensor distance in meters
 
 namespace tfmini
 {
 
 extern "C" __EXPORT int tfmini_main(int argc, char *argv[]);
 
-
+// TODO: Why does it need to be a device? Do I need the features this provides?
 class TFMini : public device::CDev, public ModuleBase<TFMini>
 {
 public:
@@ -114,6 +118,9 @@ struct TFMiniProto {
 
 	// Configure UART (baud rate and other options)
 	static int uart_config(int uart_fd);
+
+	// Parse buffer into distance message
+	static bool parse(uint8_t *const buffer, size_t buff_len, distance_sensor_s *const data);
 };
 
 } // namespace tfmini

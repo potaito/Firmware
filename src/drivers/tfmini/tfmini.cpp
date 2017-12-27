@@ -271,13 +271,38 @@ int TFMiniProto::uart_config(int uart_fd){
 	}
 
 	// Set baud rate
+	PX4_INFO("Setting baud rate");
 	if(cfsetispeed(&config, B115200) < 0 ||
 	   cfsetospeed(&config, B115200) < 0) {
 		PX4_ERR("TFMiniProto: failed to set baudrate: %d\n", termios_state);
 		return PX4_ERROR;
 	}
 
+	PX4_INFO("Done with UART setup!");
 	return PX4_OK;
+}
+
+bool TFMiniProto::parse(uint8_t *const buffer, size_t buff_len, distance_sensor_s * const msg) {
+	// Look for message header
+	size_t header_index;
+	for (header_index = 0; header_index < buff_len-(TFMINI_FRAME_SIZE); header_index++){
+		if(buffer[header_index] == 0x59 >>8 && buffer[header_index+1] == 0x59){
+			break;  // header found
+		}
+	}
+
+	// make sure enough bytes have been received to make up entire frame
+	if (header_index+TFMINI_FRAME_SIZE < buff_len){
+		return false;
+	}
+
+	// TODO: Checksum check
+
+	msg->timestamp = hrt_absolute_time();
+	msg->current_distance = buffer[header_index+2] + (buffer[header_index+3] << 8);
+	msg->covariance = 0.0f;  // TODO: Can this be a static value from the data sheet?
+
+	return true;
 }
 
 int tfmini_main(int argc, char *argv[])
