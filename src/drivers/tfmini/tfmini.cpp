@@ -111,10 +111,6 @@ void TFMini::cycle()
 	num_bytes_read = ::read(_uart_file_des, rx_buffer, sizeof(rx_buffer));
 	memcpy(_buffer, rx_buffer, num_bytes_read);
 
-	if (num_bytes_read > 0) {
-		// PX4_INFO("Bytes received: %u", num_bytes_read);
-	}
-
 #else
 	// // Wait for data to be received, using sensor rate as timeout in order to have
 	// // the task still appear responsive
@@ -144,14 +140,15 @@ void TFMini::cycle()
 
 void TFMini::cycle_trampoline(void *arg)
 {
+	const int cycle_start_time = hrt_absolute_time();
 	TFMini *tfmini = reinterpret_cast<TFMini *>(arg);
 	tfmini->cycle();
 
 	// Schedule next execution
-	// TODO: Compute exactly the number of ticks based on how long the cycle took
 	if (!tfmini->should_exit()) {
+		// NOTE: The actual scheduling frequency is still not correct (too slow)
 		work_queue(HPWORK, &_work, (worker_t)&TFMini::cycle_trampoline, tfmini,
-			   USEC2TICK(1000000 / TFMINI_SENSOR_RATE));
+			   USEC2TICK(int(1000000 / TFMINI_SENSOR_RATE - (hrt_absolute_time() - cycle_start_time))));
 
 	} else {
 		exit_and_cleanup();
