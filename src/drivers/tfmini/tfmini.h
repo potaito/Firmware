@@ -52,12 +52,13 @@
 #	define DEVICE_ARGUMENT_MAX_LENGTH 32
 #endif
 
+#define TFMINI_FRAME_SIZE 9  // Frame size in bytes
+#define TFMINI_FRAME_HEADER 0x59  // Has to appear twice in succession
+
 #define TFMINI_DEVICE_PATCH "/dev/tfmini"
 #define TFMINI_BAUD_RATE B115200
 #define TFMINI_WAIT_BEFORE_READ_MICRO_SECS  1000  // Given the baud rate and frame size, the theoretical transmission time per frame is 625 microseconds.
-
-#define TFMINI_FRAME_SIZE 9  // Frame size in bytes
-#define TFMINI_FRAME_HEADER 0x5959
+#define BUFFER_SIZE 18
 
 #define TFMINI_SENSOR_RATE 100       // Sensor update rate in Hz
 #define TFMINI_MIN_DISTANCE (0.30f)  // Minimum sensor distance in meters
@@ -110,6 +111,8 @@ private:
 	static struct work_s	_work;
 	int _uart_file_des = -1;
 	static uint8_t _next_instance_id;
+
+	uint8_t *_buffer[BUFFER_SIZE];
 };
 
 struct TFMiniProto {

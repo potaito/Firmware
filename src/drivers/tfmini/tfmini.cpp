@@ -100,13 +100,45 @@ int TFMini::task_spawn(int argc, char *argv[])
 
 void TFMini::cycle()
 {
-	sensor_msg.timestamp = hrt_absolute_time();
-	sensor_msg.current_distance = 0;
-	sensor_msg.covariance = 0.0f;
+	int num_bytes_read = 0;
+	uint8_t rx_buffer[BUFFER_SIZE];
+	memset(rx_buffer, 0, sizeof(rx_buffer));
 
-	/* publish sensor data if this is the primary */
-	if (_distance_sensor_topic != nullptr) {
-		orb_publish(ORB_ID(distance_sensor), _distance_sensor_topic, &sensor_msg);
+#if defined(__PX4_QURT)
+	/* For QURT, just use read for now, since this doesn't block, we need to
+	   slow it down just a bit. */
+	usleep(TFMINI_WAIT_BEFORE_READ_MICRO_SECS);
+	num_bytes_read = ::read(_uart_file_des, rx_buffer, sizeof(rx_buffer));
+	memcpy(_buffer, rx_buffer, num_bytes_read);
+
+	if (num_bytes_read > 0) {
+		// PX4_INFO("Bytes received: %u", num_bytes_read);
+	}
+
+#else
+	// // Wait for data to be received, using sensor rate as timeout in order to have
+	// // the task still appear responsive
+	// struct pollfd fds;
+	// fds.fd = _uart_file_des;
+	// fds.events = POLLIN;
+	// fds.revents = 0;
+	// int ret = poll(fds, 1, -1, 1000.0/TFMINI_SENSOR_RATE);
+	//
+	// if (ret > 0 && fds.revents & POLLIN) {
+	//
+	// }
+#endif
+
+
+	// Parse and publish sensor reading
+	if (num_bytes_read > 0) {
+		bool parsed = TFMiniProto::parse(rx_buffer, num_bytes_read, &sensor_msg);
+		// bool parsed = true;
+
+		/* publish sensor data if this is the primary */
+		if (parsed && _distance_sensor_topic != nullptr) {
+			orb_publish(ORB_ID(distance_sensor), _distance_sensor_topic, &sensor_msg);
+		}
 	}
 }
 
@@ -116,6 +148,7 @@ void TFMini::cycle_trampoline(void *arg)
 	tfmini->cycle();
 
 	// Schedule next execution
+	// TODO: Compute exactly the number of ticks based on how long the cycle took
 	if (!tfmini->should_exit()) {
 		work_queue(HPWORK, &_work, (worker_t)&TFMini::cycle_trampoline, tfmini,
 			   USEC2TICK(1000000 / TFMINI_SENSOR_RATE));
@@ -132,12 +165,6 @@ TFMini *TFMini::instantiate(int argc, char *argv[])
 	int ch;
 	int myoptind = 1;
 	const char *myoptarg = nullptr;
-
-	PX4_INFO("argc: %i", argc);
-
-	for (int i = 0; i < argc; i++) {
-		PX4_INFO(argv[i]);
-	}
 
 	if (argc < 2) {
 		print_usage("not enough arguments");
@@ -206,7 +233,6 @@ int TFMini::print_status()
 
 int TFMini::init()
 {
-	PX4_INFO("Configuring UART");
 	_uart_file_des = TFMiniProto::init(_device_path);
 	if(_uart_file_des<0){
 		PX4_ERR("failed to open uart device!");
@@ -226,7 +252,8 @@ int TFMini::init()
 
 int TFMiniProto::init(const char* device){
 	// Open and configure UART port
-	int uart_fd = ::open(device, O_RDONLY | O_NOCTTY | O_NONBLOCK);
+	// int uart_fd = ::open(device, O_RDONLY | O_NOCTTY | O_NONBLOCK);
+	int uart_fd = ::open(device, O_RDWR);
 	if (uart_fd < 0) {
 		return PX4_ERROR;
 	}
@@ -241,40 +268,40 @@ int TFMiniProto::init(const char* device){
 }
 
 int TFMiniProto::uart_config(int uart_fd){
-	int termios_state = -1;
 	struct termios config;
 
 	/* Make sure the struct does not have anything in it*/
 	memset(&config, 0, sizeof(struct termios));
 
-	/* Get the current configurations of the termios device. */
-	if (tcgetattr(uart_fd, &config) != 0)
-	{
-		PX4_ERR("TFMiniProto: tcgetattr call failed.");
-		return PX4_ERROR;
-	}
-
-	// Input flags - Turn off input processing
+	// NOTE: For some reason the flag configuration messes everything up
 	//
-	// convert break to null byte, no CR to NL translation,
-	// no NL to CR translation, don't mark parity errors or breaks
-	// no input parity check, don't strip high bit off,
-	// no XON/XOFF software flow control
-	config.c_iflag &= ~(IGNBRK | BRKINT | ICRNL |
-										INLCR | PARMRK | INPCK | ISTRIP | IXON);
-
+	// /* Get the current configurations of the termios device. */
+	// if (tcgetattr(uart_fd, &config) != 0)
+	// {
+	// 	PX4_ERR("TFMiniProto: tcgetattr call failed.");
+	// 	return PX4_ERROR;
+	// }
+	//
+	// // Input flags - Turn off input processing
+	// //
+	// // convert break to null byte, no CR to NL translation,
+	// // no NL to CR translation, don't mark parity errors or breaks
+	// // no input parity check, don't strip high bit off,
+	// // no XON/XOFF software flow control
+	// config.c_iflag &= ~(IGNBRK | BRKINT | ICRNL | INLCR | PARMRK | INPCK | ISTRIP | IXON);
+	//
 	// // Apply the config changes
-	if(tcsetattr(uart_fd, TCSANOW, &config) < 0)
-	{
-		PX4_ERR("TFMiniProto: failed to apply termios configuration: %d\n", termios_state);
-		return PX4_ERROR;
-	}
+	// if(tcsetattr(uart_fd, TCSANOW, &config) < 0)
+	// {
+	// 	PX4_ERR("TFMiniProto: failed to apply termios configurationd\n");
+	// 	return PX4_ERROR;
+	// }
 
 	// Set baud rate
 	PX4_INFO("Setting baud rate");
 	if(cfsetispeed(&config, B115200) < 0 ||
 	   cfsetospeed(&config, B115200) < 0) {
-		PX4_ERR("TFMiniProto: failed to set baudrate: %d\n", termios_state);
+		PX4_ERR("TFMiniProto: failed to set baudrate\n");
 		return PX4_ERROR;
 	}
 
@@ -286,7 +313,7 @@ bool TFMiniProto::parse(uint8_t *const buffer, size_t buff_len, distance_sensor_
 	// Look for message header
 	size_t header_index;
 	for (header_index = 0; header_index < buff_len-(TFMINI_FRAME_SIZE); header_index++){
-		if(buffer[header_index] == 0x59 >>8 && buffer[header_index+1] == 0x59){
+		if(buffer[header_index] == TFMINI_FRAME_HEADER && buffer[header_index+1] == TFMINI_FRAME_HEADER){
 			break;  // header found
 		}
 	}
@@ -299,7 +326,7 @@ bool TFMiniProto::parse(uint8_t *const buffer, size_t buff_len, distance_sensor_
 	// TODO: Checksum check
 
 	msg->timestamp = hrt_absolute_time();
-	msg->current_distance = buffer[header_index+2] + (buffer[header_index+3] << 8);
+	msg->current_distance = (buffer[header_index+2] + (buffer[header_index+3] << 8))/100.0;
 	msg->covariance = 0.0f;  // TODO: Can this be a static value from the data sheet?
 
 	return true;
