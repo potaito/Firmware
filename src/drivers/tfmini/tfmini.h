@@ -108,4 +108,12 @@ private:
 	static uint8_t _next_instance_id;
 };
 
+struct TFMiniProto {
+
+	static int init(const char *device);
+
+	// Configure UART (baud rate and other options)
+	static int uart_config(int uart_fd);
+};
+
 } // namespace tfmini

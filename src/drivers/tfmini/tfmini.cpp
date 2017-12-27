@@ -110,7 +110,7 @@ void TFMini::cycle()
 	sensor_msg.current_distance = 0;
 	sensor_msg.covariance = 0.0f;
 
-	/* publish sensor data, if we are the primary */
+	/* publish sensor data if this is the primary */
 	if (_distance_sensor_topic != nullptr) {
 		orb_publish(ORB_ID(distance_sensor), _distance_sensor_topic, &sensor_msg);
 	}
@@ -213,23 +213,50 @@ int TFMini::print_status()
 int TFMini::init()
 {
 	PX4_INFO("Configuring UART");
+	_uart_file_des = TFMiniProto::init(_device_path);
+	if(_uart_file_des<0){
+		PX4_ERR("failed to open uart device!");
+		return PX4_ERROR;
+	}
+
+	// Advertise uORB
+	_distance_sensor_topic = orb_advertise_multi(ORB_ID(distance_sensor),
+	&sensor_msg, &_orb_class_instance, ORB_PRIO_LOW);
+
+	if (_distance_sensor_topic == nullptr) {
+		PX4_WARN("failed to create distance_sensor object. Is uOrb running?");
+	}
+
+	return PX4_OK;
+}
+
+int TFMiniProto::init(const char* device){
+	// Open and configure UART port
+	int uart_fd = ::open(device, O_RDONLY | O_NOCTTY | O_NONBLOCK);
+	if (uart_fd < 0) {
+		return PX4_ERROR;
+	}
+
+	int ret = TFMiniProto::uart_config(uart_fd);
+
+	if (!ret){
+		return uart_fd;
+	}else{
+		return -1;
+	}
+}
+
+int TFMiniProto::uart_config(int uart_fd){
 	int termios_state = -1;
 	struct termios config;
 
 	/* Make sure the struct does not have anything in it*/
 	memset(&config, 0, sizeof(struct termios));
 
-	// Open and configure UART port
-	_uart_file_des = ::open(_device_path, O_RDONLY | O_NOCTTY | O_NONBLOCK);
-	if (_uart_file_des < 0) {
-		PX4_ERR("failed to open uart device!");
-		return PX4_ERROR;
-	}
-
 	/* Get the current configurations of the termios device. */
-	if (tcgetattr(_uart_file_des, &config) != 0)
+	if (tcgetattr(uart_fd, &config) != 0)
 	{
-		PX4_ERR("tcgetattr call failed.");
+		PX4_ERR("TFMiniProto: tcgetattr call failed.");
 		return PX4_ERROR;
 	}
 
@@ -243,25 +270,17 @@ int TFMini::init()
 										INLCR | PARMRK | INPCK | ISTRIP | IXON);
 
 	// // Apply the config changes
-	if(tcsetattr(_uart_file_des, TCSANOW, &config) < 0)
+	if(tcsetattr(uart_fd, TCSANOW, &config) < 0)
 	{
-		PX4_ERR("failed to apply termios configuration for %s: %d\n", _device_path, termios_state);
+		PX4_ERR("TFMiniProto: failed to apply termios configuration: %d\n", termios_state);
 		return PX4_ERROR;
 	}
 
 	// Set baud rate
 	if(cfsetispeed(&config, B115200) < 0 ||
 	   cfsetospeed(&config, B115200) < 0) {
-		PX4_ERR("failed to set baudrate for %s: %d\n", _device_path, termios_state);
+		PX4_ERR("TFMiniProto: failed to set baudrate: %d\n", termios_state);
 		return PX4_ERROR;
-	}
-
-	// Advertise uORB
-	_distance_sensor_topic = orb_advertise_multi(ORB_ID(distance_sensor),
-	&sensor_msg, &_orb_class_instance, ORB_PRIO_LOW);
-
-	if (_distance_sensor_topic == nullptr) {
-		PX4_WARN("failed to create distance_sensor object. Is uOrb running?");
 	}
 
 	return PX4_OK;
