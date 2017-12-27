@@ -32,7 +32,7 @@
  ****************************************************************************/
 
 /**
- * @file tfmini.cpp
+ * @file tfmini.h
  * @author Alessandro Simovic
  *
  * Driver for the Benawake TFMini micro lidar range finder, connected via UART.
@@ -76,7 +76,16 @@ extern "C" __EXPORT int tfmini_main(int argc, char *argv[]);
 class TFMini : public device::CDev, public ModuleBase<TFMini>
 {
 public:
+	/**
+	 * Default constructor
+	 * @param device UNIX path of UART device where sensor is attached
+	 * @param orientation as defined in msg/distance_sensor.msg
+	 */
 	TFMini(const char *const device, uint8_t orientation);
+
+	/**
+	 * Default destructor
+	 */
 	~TFMini();
 
 	/** @see ModuleBase */
@@ -94,6 +103,10 @@ public:
 	/** @see ModuleBase */
 	int print_status() override;
 
+	/**
+	 * Entry point for the work scheduler
+	 * @param arg command line arguments
+	 */
 	static void cycle_trampoline(void *arg);
 
 	/**
@@ -114,18 +127,30 @@ private:
 	static struct work_s	_work;
 	int _uart_file_des = -1;
 	static uint8_t _next_instance_id;
-
 	uint8_t *_buffer[BUFFER_SIZE];
 };
 
 struct TFMiniProto {
-
+	/**
+	 * Open and configure the UART serial device where sensor is attached
+	 * @param device UNIX path of device
+	 * @returns file descriptor of device, negative means error
+	 */
 	static int init(const char *device);
 
-	// Configure UART (baud rate and other options)
+	/**
+	 * Configure UART (baud rate and other options)
+	 * @param uart_fd File descriptor of serial device previously opened
+	 */
 	static int uart_config(int uart_fd);
 
-	// Parse buffer into distance message
+	/**
+	 * Parse buffer into distance sensor message
+	 * @param buffer RC buffer containing raw sensor data
+	 * @param buff_len Number of bytes in buffer that are containing data
+	 * @param data Distance sensor data that will be filled
+	 * @returns true on success, false on failure
+	 */
 	static bool parse(uint8_t *const buffer, size_t buff_len, distance_sensor_s *const data);
 };
 

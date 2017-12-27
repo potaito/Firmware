@@ -35,7 +35,6 @@
  * @file tfmini.cpp
  * @author Alessandro Simovic
  *
- * Driver for the Benawake TFMini micro lidar range finder, connected via UART.
  */
 
 #include "tfmini.h"
@@ -49,8 +48,7 @@
 namespace tfmini
 {
 
-extern "C" __EXPORT int tfmini_main(int argc, char *argv[]);
-
+// static members
 struct work_s TFMini::_work = {};
 uint8_t TFMini::_next_instance_id = 0;
 
@@ -271,8 +269,7 @@ int TFMini::init()
 
 int TFMiniProto::init(const char* device){
 	// Open and configure UART port
-	// int uart_fd = ::open(device, O_RDONLY | O_NOCTTY | O_NONBLOCK);
-	int uart_fd = ::open(device, O_RDWR);
+	int uart_fd = ::open(device, O_RDONLY | O_NOCTTY | O_NONBLOCK);
 	if (uart_fd < 0) {
 		return PX4_ERROR;
 	}
@@ -361,6 +358,8 @@ bool TFMiniProto::parse(uint8_t *const buffer, size_t buff_len, distance_sensor_
 
 	return true;
 }
+
+extern "C" __EXPORT int tfmini_main(int argc, char *argv[]);
 
 int tfmini_main(int argc, char *argv[])
 {
