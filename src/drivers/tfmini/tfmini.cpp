@@ -316,7 +316,7 @@ bool TFMiniProto::parse(uint8_t *const buffer, size_t buff_len, distance_sensor_
 	}
 
 	// make sure enough bytes have been received to make up entire frame
-	if (header_index+TFMINI_FRAME_SIZE < buff_len){
+	if (buff_len < header_index+TFMINI_FRAME_SIZE){
 		return false;
 	}
 
