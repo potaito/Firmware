@@ -320,7 +320,17 @@ bool TFMiniProto::parse(uint8_t *const buffer, size_t buff_len, distance_sensor_
 		return false;
 	}
 
-	// TODO: Checksum check
+	// Compute and compare checksum
+	// Checksum is the lower 8 bit of the sum of the frame's payload, without crc:
+	// byte1 + byte2 + byte3 + .. + byte8
+	uint16_t expected_checksum = 0;
+	for (size_t byte = 0; byte < 8; byte++){
+		expected_checksum += buffer[byte];
+	}
+	if (buffer[8]!=expected_checksum%256){
+		PX4_WARN("crc not matching, dropping measurement");
+		return false; // CRC mismatch, drop message
+	}
 
 	msg->timestamp = hrt_absolute_time();
 	msg->current_distance = (buffer[header_index+2] + (buffer[header_index+3] << 8))/100.0;
