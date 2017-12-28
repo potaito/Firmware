@@ -41,6 +41,7 @@
 
 #include <px4_defines.h>
 #include <px4_getopt.h>
+#include <drivers/drv_hrt.h>
 #include <fcntl.h>
 #include <termios.h>
 #include <unistd.h>
@@ -117,7 +118,7 @@ void TFMini::cycle()
 	fds.fd = _uart_file_des;
 	fds.events = POLLIN;
 	fds.revents = 0;
-	int ret = poll(fds, 1, -1, 1000.0 / TFMINI_SENSOR_RATE);
+	int ret = ::poll(&fds, 1, 1000.0 / TFMINI_SENSOR_RATE);
 
 	if (ret > 0 && fds.revents & POLLIN) {
 		/*
@@ -130,7 +131,7 @@ void TFMini::cycle()
 #ifdef __PX4_NUTTX
 		int err = 0;
 		int bytesAvailable = 0;
-		err = ioctl(_serial_fd, FIONREAD, (unsigned long)&bytesAvailable);
+		err = ::ioctl(_uart_file_des, FIONREAD, (unsigned long)&bytesAvailable);
 
 		if ((err != 0) || (bytesAvailable < TFMINI_FRAME_SIZE)) {
 			usleep(TFMINI_WAIT_BEFORE_READ_MICRO_SECS * 1000);
