@@ -134,14 +134,14 @@ void TFMini::cycle()
 		err = ::ioctl(_uart_file_des, FIONREAD, (unsigned long)&bytesAvailable);
 
 		if ((err != 0) || (bytesAvailable < TFMINI_FRAME_SIZE)) {
-			usleep(TFMINI_WAIT_BEFORE_READ_MICRO_SECS * 1000);
+			usleep(5 * TFMINI_WAIT_BEFORE_READ_MICRO_SECS);
 		}
 
 #else
-		usleep(TFMINI_WAIT_BEFORE_READ_MICRO_SECS * 1000);
+		usleep(TFMINI_WAIT_BEFORE_READ_MICRO_SECS);
 #endif
-
-		ret = ::read(_uart_file_des, rx_buffer, BUFFER_SIZE);
+		num_bytes_read = ::read(_uart_file_des, rx_buffer, sizeof(rx_buffer));
+		memcpy(_buffer, rx_buffer, num_bytes_read);
 	}
 
 #endif
@@ -150,7 +150,6 @@ void TFMini::cycle()
 	// Parse and publish sensor reading
 	if (num_bytes_read > 0) {
 		bool parsed = TFMiniProto::parse(rx_buffer, num_bytes_read, &sensor_msg);
-		// bool parsed = true;
 
 		/* publish sensor data if this is the primary */
 		if (parsed && _distance_sensor_topic != nullptr) {
@@ -292,27 +291,40 @@ int TFMiniProto::uart_config(int uart_fd){
 
 	// NOTE: For some reason the flag configuration messes everything up
 	//
-	// /* Get the current configurations of the termios device. */
-	// if (tcgetattr(uart_fd, &config) != 0)
-	// {
-	// 	PX4_ERR("TFMiniProto: tcgetattr call failed.");
-	// 	return PX4_ERROR;
-	// }
+	/* Get the current configurations of the termios device. */
+	if (tcgetattr(uart_fd, &config) != 0)
+	{
+		PX4_ERR("TFMiniProto: tcgetattr call failed.");
+		return PX4_ERROR;
+	}
+
+	// Input flags - Turn off input processing
 	//
-	// // Input flags - Turn off input processing
-	// //
-	// // convert break to null byte, no CR to NL translation,
-	// // no NL to CR translation, don't mark parity errors or breaks
-	// // no input parity check, don't strip high bit off,
-	// // no XON/XOFF software flow control
-	// config.c_iflag &= ~(IGNBRK | BRKINT | ICRNL | INLCR | PARMRK | INPCK | ISTRIP | IXON);
-	//
-	// // Apply the config changes
-	// if(tcsetattr(uart_fd, TCSANOW, &config) < 0)
-	// {
-	// 	PX4_ERR("TFMiniProto: failed to apply termios configurationd\n");
-	// 	return PX4_ERROR;
-	// }
+	// convert break to null byte, no CR to NL translation,
+	// no NL to CR translation, don't mark parity errors or breaks
+	// no input parity check, don't strip high bit off,
+	// no XON/XOFF software flow control
+	config.c_iflag &= ~(IGNBRK | BRKINT | ICRNL | INLCR | PARMRK | INPCK | ISTRIP | IXON);
+	// config.c_cflag = CRTSCTS | CS8 | CLOCAL | CREAD;
+	config.c_iflag = IGNPAR | ICRNL;
+	// config.c_cflag &= ~CSTOPB; 		// 1 stop bit
+	// config.c_cflag &= ~CRTSCTS;   // Disable hardware flow control
+
+	// No parity (8N1)
+	config.c_cflag &= ~PARENB;
+	config.c_cflag &= ~CSTOPB;
+	config.c_cflag &= ~CSIZE;
+	config.c_cflag |= CS8;
+
+	// Choosing Raw Input
+	config.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+
+	// Apply the config changes
+	if(tcsetattr(uart_fd, TCSANOW, &config) < 0)
+	{
+		PX4_ERR("TFMiniProto: failed to apply termios configurationd\n");
+		return PX4_ERROR;
+	}
 
 	// Set baud rate
 	PX4_INFO("Setting baud rate");
@@ -329,9 +341,12 @@ int TFMiniProto::uart_config(int uart_fd){
 bool TFMiniProto::parse(uint8_t *const buffer, size_t buff_len, distance_sensor_s * const msg) {
 	// Look for message header
 	size_t header_index;
-	for (header_index = 0; header_index < buff_len-(TFMINI_FRAME_SIZE); header_index++){
+	for (header_index = 0; header_index < buff_len-TFMINI_FRAME_SIZE; header_index++){
 		if(buffer[header_index] == TFMINI_FRAME_HEADER && buffer[header_index+1] == TFMINI_FRAME_HEADER){
 			break;  // header found
+		}else if(header_index+1==buff_len-TFMINI_FRAME_SIZE){
+			// Last iteration and no header was found
+			return false;
 		}
 	}
 
