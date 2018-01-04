@@ -379,7 +379,112 @@ extern "C" __EXPORT int tfmini_main(int argc, char *argv[]);
 
 int tfmini_main(int argc, char *argv[])
 {
-	return TFMini::main(argc, argv);
+	// return TFMini::main(argc, argv);
+
+	// PX4_INFO("task_spawn");
+	// TFMini *tfmini = TFMini::instantiate(argc, argv);
+	//
+	// if (tfmini == nullptr) {
+	// 	PX4_ERR("Failed to instantiate module");
+	// 	return PX4_ERROR;
+	// }
+	//
+	// for (size_t i=0; i < 10; i++)
+	// {
+	// 	PX4_INFO("Calling cycle");
+	// 	tfmini->cycle();
+	// 	PX4_INFO("");
+	// 	usleep(TFMINI_WAIT_BEFORE_READ_MICRO_SECS);
+	// }
+	//
+	// delete tfmini;
+	//
+	//
+	// return PX4_OK;
+
+
+
+
+
+
+	PX4_INFO("Opening UART");
+	int fd = px4_open("/dev/ttyS2", O_RDWR | O_NOCTTY);
+	if(fd<0) {
+	 PX4_ERR("Could not open serial device");
+	 return PX4_ERROR;
+	}
+
+	/// UART CONFIG ///
+	struct termios config;
+
+	if (!isatty(fd)) {
+		PX4_ERR("Not a tty device");
+		return PX4_ERROR;
+	}
+
+	if(tcgetattr(fd, &config) < 0){
+		PX4_ERR("Could not get termios config");
+		return PX4_ERROR;
+	}
+
+	// config.c_iflag &= ~(IGNBRK | BRKINT | ICRNL |
+  //                    INLCR | PARMRK | INPCK | ISTRIP | IXON);
+	// config.c_iflag &= ~
+	config.c_iflag &= ~(INPCK | PARMRK | ISTRIP | IXON | IXOFF | IXANY);  // Disable flow control
+	// config.c_oflag = 0;
+	config.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+
+	// 8N1
+	config.c_cflag &= ~PARENB;
+	config.c_cflag &= ~CSTOPB;
+	config.c_cflag &= ~CSIZE;
+	config.c_cflag |= CS8;
+	// config.c_cflag=CS8|CREAD|CLOCAL;
+
+	if(cfsetispeed(&config, B115200) < 0 || cfsetospeed(&config, B115200) < 0) {
+     PX4_ERR("Could not set baud rate");
+		 return PX4_ERROR;
+	}
+
+	if(tcsetattr(fd, TCSANOW, &config) < 0) {
+		PX4_ERR("Could not submit config");
+		return PX4_ERROR;
+	}
+	// usleep(30000);
+	unsigned char buffer[255];  /* Input buffer */
+	// unsigned char collective_buffer[2550];
+  unsigned int  nbytes;       /* Number of bytes read */
+	unsigned int  nbytes_tot = 0;
+	// struct pollfd fds;
+	// fds.fd = fd;
+	// fds.events = POLLIN;
+	// fds.revents = 0;
+
+	usleep(10000);
+	for (size_t i = 0; i < 100; i++){
+		// PX4_INFO("polling");
+		// int ret = ::poll(&fds, 1, 1000.0 / TFMINI_SENSOR_RATE);
+
+		memset(buffer, 0, sizeof(buffer));
+
+		// if (ret > 0 && fds.revents & POLLIN) {
+		nbytes = read(fd, &buffer[0], 255);
+		nbytes_tot+=nbytes;
+		PX4_INFO("Received %u bytes", nbytes);
+		if (nbytes>0) {
+			printf("buffer: ");
+			for (size_t byte = 0; byte<nbytes; byte++) {
+				printf("%X ", buffer[byte]);
+			}
+			printf("\n");
+			}
+		// }
+		usleep(1000);
+	}
+
+	PX4_INFO("Closing UART");
+	px4_close(fd);
+	return PX4_OK;
 }
 
 } // namespace tfmini
