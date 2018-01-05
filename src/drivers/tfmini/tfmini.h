@@ -42,7 +42,8 @@
 
 #include <drivers/device/ringbuffer.h>
 #include <drivers/device/device.h>
-#include <px4_workqueue.h>
+// #include <px4_workqueue.h>
+#include <nuttx/wqueue.h>
 #include <px4_module.h>
 #include <uORB/uORB.h>
 #include <uORB/topics/subsystem_info.h>
@@ -66,6 +67,8 @@
 #define TFMINI_SENSOR_RATE 100       // Sensor update rate in Hz
 #define TFMINI_MIN_DISTANCE (0.30f)  // Minimum sensor distance in meters
 #define TFMINI_MAX_DISTANCE (12.00f) // Maximum sensor distance in meters
+
+// TODO: Add orientation as a parameter of the module
 
 namespace tfmini
 {

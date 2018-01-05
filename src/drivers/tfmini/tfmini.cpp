@@ -76,6 +76,7 @@ TFMini::~TFMini()
 
 int TFMini::task_spawn(int argc, char *argv[])
 {
+	PX4_INFO("task_spawn");
 	TFMini *tfmini = TFMini::instantiate(argc, argv);
 
 	if (tfmini == nullptr) {
@@ -86,9 +87,11 @@ int TFMini::task_spawn(int argc, char *argv[])
 	_object = tfmini;
 
 	/* schedule first cycle as soon as possible */
+	PX4_INFO("Queuing first cycle");
 	int ret = work_queue(HPWORK, &_work, (worker_t)&TFMini::cycle_trampoline, tfmini, 0);
 
 	if (ret < 0) {
+		PX4_WARN("Failed to schedule first cycle");
 		return ret;
 	}
 
@@ -99,6 +102,7 @@ int TFMini::task_spawn(int argc, char *argv[])
 
 void TFMini::cycle()
 {
+	// PX4_INFO("cycle");
 	int num_bytes_read = 0;
 	uint8_t rx_buffer[BUFFER_SIZE];
 	memset(rx_buffer, 0, sizeof(rx_buffer));
@@ -118,6 +122,7 @@ void TFMini::cycle()
 	fds.fd = _uart_file_des;
 	fds.events = POLLIN;
 	fds.revents = 0;
+	// PX4_INFO("polling");
 	int ret = ::poll(&fds, 1, 1000.0 / TFMINI_SENSOR_RATE);
 
 	if (ret > 0 && fds.revents & POLLIN) {
@@ -133,14 +138,18 @@ void TFMini::cycle()
 		int bytesAvailable = 0;
 		err = ::ioctl(_uart_file_des, FIONREAD, (unsigned long)&bytesAvailable);
 
+		PX4_INFO("bytesAvailable: %u", bytesAvailable);
+
 		if ((err != 0) || (bytesAvailable < TFMINI_FRAME_SIZE)) {
 			usleep(5 * TFMINI_WAIT_BEFORE_READ_MICRO_SECS);
 		}
 
 #else
+		PX4_INFO("reading");
 		usleep(TFMINI_WAIT_BEFORE_READ_MICRO_SECS);
 #endif
 		num_bytes_read = ::read(_uart_file_des, rx_buffer, sizeof(rx_buffer));
+		PX4_INFO("num_bytes_read: %u", num_bytes_read);
 		memcpy(_buffer, rx_buffer, num_bytes_read);
 	}
 
@@ -160,6 +169,7 @@ void TFMini::cycle()
 
 void TFMini::cycle_trampoline(void *arg)
 {
+	PX4_INFO("cycle_trampoline");
 	const int cycle_start_time = hrt_absolute_time();
 	TFMini *tfmini = reinterpret_cast<TFMini *>(arg);
 	tfmini->cycle();
@@ -269,7 +279,8 @@ int TFMini::init()
 
 int TFMiniProto::init(const char* device){
 	// Open and configure UART port
-	int uart_fd = ::open(device, O_RDONLY | O_NOCTTY | O_NONBLOCK);
+	int uart_fd = ::open(device, O_RDONLY | O_NOCTTY | O_NDELAY | O_NONBLOCK);
+	// int uart_fd = px4_open(device, O_RDWR | O_NOCTTY);
 	if (uart_fd < 0) {
 		return PX4_ERROR;
 	}
@@ -286,38 +297,59 @@ int TFMiniProto::init(const char* device){
 int TFMiniProto::uart_config(int uart_fd){
 	struct termios config;
 
+	if(!isatty(uart_fd)) {
+		PX4_ERR("TFMiniProto: Not a TTY device");
+		return PX4_ERROR;
+	}
+
 	/* Make sure the struct does not have anything in it*/
-	memset(&config, 0, sizeof(struct termios));
+	// memset(&config, 0, sizeof(struct termios));
 
 	// NOTE: For some reason the flag configuration messes everything up
 	//
 	/* Get the current configurations of the termios device. */
-	if (tcgetattr(uart_fd, &config) != 0)
+	if (tcgetattr(uart_fd, &config) < 0)
 	{
 		PX4_ERR("TFMiniProto: tcgetattr call failed.");
 		return PX4_ERROR;
 	}
 
-	// Input flags - Turn off input processing
-	//
-	// convert break to null byte, no CR to NL translation,
-	// no NL to CR translation, don't mark parity errors or breaks
-	// no input parity check, don't strip high bit off,
-	// no XON/XOFF software flow control
-	config.c_iflag &= ~(IGNBRK | BRKINT | ICRNL | INLCR | PARMRK | INPCK | ISTRIP | IXON);
-	// config.c_cflag = CRTSCTS | CS8 | CLOCAL | CREAD;
-	config.c_iflag = IGNPAR | ICRNL;
-	// config.c_cflag &= ~CSTOPB; 		// 1 stop bit
-	// config.c_cflag &= ~CRTSCTS;   // Disable hardware flow control
+	///////
+	// config.c_oflag &= ~ONLCR;
+	// config.c_cflag &= ~CRTSCTS;
+	///////
 
-	// No parity (8N1)
+	// Setting 8N1 character size (8), parity (None) and stop bits (1)
 	config.c_cflag &= ~PARENB;
 	config.c_cflag &= ~CSTOPB;
 	config.c_cflag &= ~CSIZE;
 	config.c_cflag |= CS8;
 
-	// Choosing Raw Input
+
+	// No line processing
+	config.c_lflag &= ~(ECHO | ECHONL | ICANON | IEXTEN | ISIG);
+
+	// Disable flow control
+	// config.c_cflag &= ~CNEW_RTSCTS;  // NOTE: Does not compile
+
+	// Raw input
 	config.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+
+	// Input flags - Turn off input processing
+	config.c_iflag &= ~(IUCLC | BRKINT | ICRNL | INLCR | PARMRK | INPCK | ISTRIP | IXOFF | IXON);
+	// config.c_iflag |= (IGNBRK | IGNPAR);
+	// config.c_iflag &= ~(IGNBRK | BRKINT | ICRNL | INLCR | PARMRK | INPCK | ISTRIP | IXON);
+
+	// Output flags
+	config.c_oflag = 0;
+
+	// Set baud rate
+	PX4_INFO("Setting baud rate");
+	if(cfsetispeed(&config, TFMINI_BAUD_RATE) < 0 ||
+		 cfsetospeed(&config, TFMINI_BAUD_RATE) < 0) {
+		PX4_ERR("TFMiniProto: failed to set baudrate\n");
+		return PX4_ERROR;
+	}
 
 	// Apply the config changes
 	if(tcsetattr(uart_fd, TCSANOW, &config) < 0)
@@ -326,32 +358,38 @@ int TFMiniProto::uart_config(int uart_fd){
 		return PX4_ERROR;
 	}
 
-	// Set baud rate
-	PX4_INFO("Setting baud rate");
-	if(cfsetispeed(&config, TFMINI_BAUD_RATE) < 0 ||
-	   cfsetospeed(&config, TFMINI_BAUD_RATE) < 0) {
-		PX4_ERR("TFMiniProto: failed to set baudrate\n");
-		return PX4_ERROR;
-	}
+
 
 	PX4_INFO("Done with UART setup!");
 	return PX4_OK;
 }
 
 bool TFMiniProto::parse(uint8_t *const buffer, size_t buff_len, distance_sensor_s * const msg) {
+	// Print buffer
+	printf("buffer: ");
+	for (size_t i = 0; i < buff_len; i++){
+		printf("%X ", buffer[i]);
+	}
+	printf("\n");
+
 	// Look for message header
+	// PX4_INFO("buffer: %s", buffer);
 	size_t header_index;
 	for (header_index = 0; header_index < buff_len-TFMINI_FRAME_SIZE; header_index++){
-		if(buffer[header_index] == TFMINI_FRAME_HEADER && buffer[header_index+1] == TFMINI_FRAME_HEADER){
+		if(buffer[header_index] == TFMINI_FRAME_HEADER &&
+			 buffer[header_index+1] == TFMINI_FRAME_HEADER){
+			PX4_INFO("Header found");
 			break;  // header found
 		}else if(header_index+1==buff_len-TFMINI_FRAME_SIZE){
 			// Last iteration and no header was found
+			PX4_INFO("No header found");
 			return false;
 		}
 	}
 
 	// make sure enough bytes have been received to make up entire frame
 	if (buff_len < header_index+TFMINI_FRAME_SIZE){
+		PX4_WARN("Incomplete message received");
 		return false;
 	}
 
@@ -372,6 +410,7 @@ bool TFMiniProto::parse(uint8_t *const buffer, size_t buff_len, distance_sensor_
 													(buffer[header_index+TFMINI_BYTE_POS_DIST_H] << 8))/100.0;
 	msg->covariance = 0.0f;  // TODO: Can this be a static value from the data sheet?
 
+	PX4_INFO("distance: %f", (double)msg->current_distance);
 	return true;
 }
 
@@ -403,15 +442,11 @@ int tfmini_main(int argc, char *argv[])
 	// return PX4_OK;
 
 
-
-
-
-
 	PX4_INFO("Opening UART");
 	int fd = px4_open("/dev/ttyS2", O_RDWR | O_NOCTTY);
 	if(fd<0) {
-	 PX4_ERR("Could not open serial device");
-	 return PX4_ERROR;
+		PX4_ERR("Could not open serial device");
+		return PX4_ERROR;
 	}
 
 	/// UART CONFIG ///
@@ -426,15 +461,15 @@ int tfmini_main(int argc, char *argv[])
 		PX4_ERR("Could not get termios config");
 		return PX4_ERROR;
 	}
+	// Raw input
+	config.c_iflag &= ~(IGNBRK | BRKINT | PARMRK | ISTRIP | INLCR | IGNCR | ICRNL | IXON);
 
-	// config.c_iflag &= ~(IGNBRK | BRKINT | ICRNL |
-  //                    INLCR | PARMRK | INPCK | ISTRIP | IXON);
-	// config.c_iflag &= ~
-	config.c_iflag &= ~(INPCK | PARMRK | ISTRIP | IXON | IXOFF | IXANY);  // Disable flow control
-	// config.c_oflag = 0;
-	config.c_lflag &= ~(ICANON | ECHO | ECHOE | ISIG);
+	// No line processing
+	config.c_lflag &= ~(ECHO | ECHONL | ICANON | ISIG | IEXTEN);
+	config.c_oflag &= ~OPOST;
 
 	// 8N1
+	config.c_cflag |= (CLOCAL | CREAD);
 	config.c_cflag &= ~PARENB;
 	config.c_cflag &= ~CSTOPB;
 	config.c_cflag &= ~CSIZE;
@@ -450,6 +485,7 @@ int tfmini_main(int argc, char *argv[])
 		PX4_ERR("Could not submit config");
 		return PX4_ERROR;
 	}
+
 	// usleep(30000);
 	unsigned char buffer[255];  /* Input buffer */
 	// unsigned char collective_buffer[2550];
@@ -476,7 +512,7 @@ int tfmini_main(int argc, char *argv[])
 			for (size_t byte = 0; byte<nbytes; byte++) {
 				printf("%X ", buffer[byte]);
 			}
-			printf("\n");
+			printf("\n\n");
 			}
 		// }
 		usleep(1000);
