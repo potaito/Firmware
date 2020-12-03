@@ -60,7 +60,7 @@
  * BatteryBase is a base class for any type of battery.
  *
  * You can use this class on its own. Or, if you need to implement a custom battery type,
- * you can inherit from this class. See, for example, src/modules/battery_status/AnalogBattery.h
+ * you can inherit from this class. See, for example, src/modules/battery_status/analog_battery.h
  */
 class Battery : public ModuleParams
 {
